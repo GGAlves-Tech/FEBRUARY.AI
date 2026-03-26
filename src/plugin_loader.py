@@ -26,29 +26,36 @@ class PluginLoader:
         module_name = os.path.basename(file_path).replace(".py", "")
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         
-        if spec is not None and spec.loader is not None:
+        if spec is None:
+            logger.error(f"[Tesseract] Não foi possível criar o spec para: {file_path}")
+            return False
+
+        if spec.loader is None:
+            logger.error(f"[Tesseract] O spec para {module_name} não possui um loader válido.")
+            return False
+
+        try:
             module = importlib.util.module_from_spec(spec)
-            try:
-                spec.loader.exec_module(module)
-                
-                # Registro dinâmico de ferramentas (Sprint 3)
-                tools_added_list = []
-                for name, func in inspect.getmembers(module, inspect.iscoroutinefunction):
-                    # Se a função não estiver registrada, nós a registramos como tool
-                    if not name.startswith("_"):
-                        self.mcp.tool()(func)
-                        tools_added_list.append(name)
-                
-                tools_added = len(tools_added_list)
-                
-                logger.info(f"[Tesseract] Plugin '{module_name}' processado. {tools_added} ferramentas injetadas.")
-                
-                if self.on_plugin_load and tools_added > 0:
-                    asyncio.create_task(self.on_plugin_load(module_name))
-                
-                return True
-            except Exception as e:
-                logger.error(f"[Tesseract] Erro ao carregar plugin {module_name}: {e}")
+            spec.loader.exec_module(module)
+            
+            # Registro dinâmico de ferramentas (Sprint 3)
+            tools_added_list = []
+            for name, func in inspect.getmembers(module, inspect.iscoroutinefunction):
+                # Se a função não estiver registrada, nós a registramos como tool
+                if not name.startswith("_"):
+                    self.mcp.tool()(func)
+                    tools_added_list.append(name)
+            
+            tools_added = len(tools_added_list)
+            
+            logger.info(f"[Tesseract] Plugin '{module_name}' processado. {tools_added} ferramentas injetadas.")
+            
+            if self.on_plugin_load and tools_added > 0:
+                asyncio.create_task(self.on_plugin_load(module_name))
+            
+            return True
+        except Exception as e:
+            logger.error(f"[Tesseract] Erro ao carregar plugin {module_name}: {e}")
         return False
 
     async def watch_loop(self):

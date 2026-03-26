@@ -3,6 +3,7 @@ import numpy as np
 import os
 import logging
 import json
+import hashlib
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -27,17 +28,36 @@ class VectorEngine:
             """)
             conn.commit()
 
+    def chunk_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+        """
+        Divide o texto em pedaços (chunks) para processamento RAG.
+        """
+        if len(text) <= chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunks.append(text[start:end])
+            start += chunk_size - overlap
+            
+            # Evita loops infinitos se overlap >= chunk_size
+            if start >= len(text) or chunk_size <= overlap:
+                break
+        return chunks
+
     def _get_embedding(self, text: str) -> np.ndarray:
         """
-        BGE-Micro Mock: Simula embeddings usando frequência de termos.
-        No Android/ARM64 será substituído pelo ONNXRuntime + BGE Real.
+        BGE-Micro Mock Estável: Usa SHA256 para garantir que o mesmo texto
+        sempre gere o mesmo vetor, independente de reinicialização.
         """
-        # Simplificação extrema para o Mock:
-        # Cria um vetor baseado em caracteres/palavras chave para simular proximidade
         terms = text.lower().split()
-        vector = np.zeros(128) # BGE-Micro-esque dimension
-        for i, term in enumerate(terms):
-            idx = hash(term) % 128
+        vector = np.zeros(128)
+        for term in terms:
+            # Hash estável usando SHA256
+            hash_val = int(hashlib.sha256(term.encode()).hexdigest(), 16)
+            idx = hash_val % 128
             vector[idx] += 1
         
         norm = np.linalg.norm(vector)
@@ -46,17 +66,31 @@ class VectorEngine:
         return vector
 
     def add_memory(self, text: str, metadata: Dict[str, Any] = None):
-        vector = self._get_embedding(text)
-        vector_json = json.dumps(vector.tolist())
-        meta_json = json.dumps(metadata or {})
+        # Chunking automático para RAG
+        chunks = self.chunk_text(text)
         
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "INSERT INTO memories (content, vector, metadata) VALUES (?, ?, ?)",
-                (text, vector_json, meta_json)
-            )
+            for i, chunk in enumerate(chunks):
+                vector = self._get_embedding(chunk)
+                vector_json = json.dumps(vector.tolist())
+                
+                # Adiciona metadados de chunking
+                chunk_meta = (metadata or {}).copy()
+                chunk_meta.update({
+                    "chunk": i,
+                    "total_chunks": len(chunks),
+                    "is_chunked": len(chunks) > 1
+                })
+                meta_json = json.dumps(chunk_meta)
+                
+                conn.execute(
+                    "INSERT INTO memories (content, vector, metadata) VALUES (?, ?, ?)",
+                    (chunk, vector_json, meta_json)
+                )
             conn.commit()
-        logger.info(f"[Tesseract] Nova memória armazenada: '{text[:30]}...'")
+        
+        chunk_info = f" ({len(chunks)} chunks)" if len(chunks) > 1 else ""
+        logger.info(f"[Tesseract] Memória processada{chunk_info}: '{text[:30]}...'")
 
     def search_memory(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         query_vec = self._get_embedding(query)
