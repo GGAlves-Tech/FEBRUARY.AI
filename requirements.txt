@@ -1,5 +1,4 @@
 mcp
 pydantic
-numpy
 aiohttp
 watchdog
