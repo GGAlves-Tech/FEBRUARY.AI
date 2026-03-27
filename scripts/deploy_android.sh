@@ -32,9 +32,9 @@ if [ -z "$GIT_EMAIL" ]; then
 fi
 echo "✅ Identidade Git configurada localmente."
 
-# 3. Setup de Ambiente e Dependências (Incluindo Numpy Estável)
+# 3. Setup de Ambiente e Dependências (Incluindo Numpy Estável e Rust para Pydantic)
 echo "[3/5] Instalando dependências táticas..."
-pkg update -y && pkg install -y python python-numpy libblas liblapack ndk-sysroot clang make libjpeg-turbo libandroid-spawn termux-api ffmpeg
+pkg update -y && pkg install -y python python-numpy blas-openblas rust binutils ndk-sysroot clang make libjpeg-turbo libandroid-spawn termux-api ffmpeg
 
 # 4. Virtualenv e Core (Permitindo pacotes de sistema para o Numpy)
 echo "[4/5] Preparando Cérebro Python..."
